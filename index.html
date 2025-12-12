@@ -1,0 +1,1140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PATH Program Tracker</title>
+
+    <!-- Tailwind (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React 18 (UMD) -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+
+    <!-- HTM: JSX-like template literals without Babel -->
+    <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js" crossorigin></script>
+  </head>
+
+  <body class="bg-slate-100">
+    <div id="root"></div>
+
+    <script>
+      (function () {
+        const { useEffect, useMemo, useState, Fragment } = React;
+        const html = htm.bind(React.createElement);
+
+        // ----------------------------
+        // Minimal UI primitives
+        // ----------------------------
+        const cn = (...xs) => xs.filter(Boolean).join(" ");
+
+        function Card({ className = "", children }) {
+          return html`<div className=${cn("border bg-white", className)}>${children}</div>`;
+        }
+
+        function CardContent({ className = "", children }) {
+          return html`<div className=${className}>${children}</div>`;
+        }
+
+        function Button({ variant = "default", className = "", disabled = false, onClick, children, type = "button" }) {
+          const base =
+            "inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold transition rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-300";
+          const styles = {
+            default: "bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50",
+            outline: "border bg-white text-slate-900 hover:bg-slate-50 disabled:opacity-50",
+            ghost: "bg-transparent text-slate-900 hover:bg-slate-100 disabled:opacity-50",
+            destructive: "bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50",
+            secondary: "bg-slate-100 text-slate-900 hover:bg-slate-200 disabled:opacity-50",
+          };
+          return html`<button
+            type=${type}
+            className=${cn(base, styles[variant] || styles.default, className)}
+            disabled=${disabled}
+            onClick=${onClick}
+          >
+            ${children}
+          </button>`;
+        }
+
+        function Input(props) {
+          const { className = "", ...rest } = props || {};
+          return html`<input
+            className=${cn(
+              "w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300",
+              className
+            )}
+            ...${rest}
+          />`;
+        }
+
+        function Label({ className = "", children }) {
+          return html`<div className=${cn("text-xs font-semibold text-slate-700", className)}>${children}</div>`;
+        }
+
+        function Badge({ variant = "secondary", className = "", children }) {
+          const styles = {
+            secondary: "bg-slate-100 text-slate-900",
+            outline: "border bg-white text-slate-900",
+            destructive: "bg-rose-600 text-white",
+          };
+          return html`<span className=${cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold", styles[variant] || styles.secondary, className)}>${children}</span>`;
+        }
+
+        function Checkbox({ checked, onCheckedChange }) {
+          return html`<input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-300"
+            checked=${!!checked}
+            onChange=${(e) => onCheckedChange && onCheckedChange(e.target.checked)}
+          />`;
+        }
+
+        function Select({ value, onValueChange, children }) {
+          return html`<select
+            className="w-full rounded-xl border bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            value=${value}
+            onChange=${(e) => onValueChange && onValueChange(e.target.value)}
+          >
+            ${children}
+          </select>`;
+        }
+
+        function SelectItem({ value, children }) {
+          return html`<option value=${value}>${children}</option>`;
+        }
+
+        function Tabs({ value, onValueChange, children }) {
+          return React.Children.map(children, (child) =>
+            React.isValidElement(child)
+              ? React.cloneElement(child, { tabsValue: value, onTabsValueChange: onValueChange })
+              : child
+          );
+        }
+
+        function TabsList({ className = "", children, tabsValue, onTabsValueChange }) {
+          return html`<div className=${cn("inline-flex gap-2 bg-slate-200 p-1", className)}>
+            ${React.Children.map(children, (child) =>
+              React.isValidElement(child)
+                ? React.cloneElement(child, { tabsValue, onTabsValueChange })
+                : child
+            )}
+          </div>`;
+        }
+
+        function TabsTrigger({ value, className = "", children, tabsValue, onTabsValueChange }) {
+          const active = tabsValue === value;
+          return html`<button
+            type="button"
+            onClick=${() => onTabsValueChange && onTabsValueChange(value)}
+            className=${cn(
+              "px-3 py-2 text-sm font-semibold rounded-xl transition",
+              active ? "bg-white text-slate-900 shadow-sm" : "text-slate-700 hover:bg-slate-100",
+              className
+            )}
+          >
+            ${children}
+          </button>`;
+        }
+
+        function TabsContent({ value, className = "", children, tabsValue }) {
+          if (tabsValue !== value) return null;
+          return html`<div className=${className}>${children}</div>`;
+        }
+
+        function Dialog({ open, onOpenChange, children }) {
+          return React.Children.map(children, (child) =>
+            React.isValidElement(child) ? React.cloneElement(child, { open, onOpenChange }) : child
+          );
+        }
+
+        function DialogContent({ open, onOpenChange, className = "", children }) {
+          if (!open) return null;
+          return html`<div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick=${() => onOpenChange && onOpenChange(false)}></div>
+            <div className=${cn("relative z-10 w-[92vw] max-w-xl rounded-2xl border bg-white p-4 shadow-lg", className)}>
+              ${children}
+            </div>
+          </div>`;
+        }
+
+        function DialogHeader({ children }) {
+          return html`<div className="mb-4">${children}</div>`;
+        }
+
+        function DialogTitle({ children }) {
+          return html`<div className="text-base font-semibold text-slate-900">${children}</div>`;
+        }
+
+        // Simple inline icons (tiny + dependency-free)
+        const Icon = ({ className = "", children }) =>
+          html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className=${className}>${children}</svg>`;
+        const SearchIcon = ({ className = "" }) => html`<${Icon} className=${className}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></${Icon}>`;
+        const ChevronDownIcon = ({ className = "" }) => html`<${Icon} className=${className}><path d="M6 9l6 6 6-6" /></${Icon}>`;
+        const CalendarIcon = ({ className = "" }) => html`<${Icon} className=${className}><path d="M8 2v4M16 2v4" /><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M3 10h18" /></${Icon}>`;
+        const SettingsIcon = ({ className = "" }) =>
+          html`<${Icon} className=${className}><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" /><path d="M19.4 15a1.8 1.8 0 0 0 .4 2l.1.1a2.2 2.2 0 0 1-1.6 3.8 2.2 2.2 0 0 1-1.6-.6l-.1-.1a1.8 1.8 0 0 0-2-.4 1.8 1.8 0 0 0-1.1 1.7V22a2.2 2.2 0 0 1-4.4 0v-.2a1.8 1.8 0 0 0-1.1-1.7 1.8 1.8 0 0 0-2 .4l-.1.1a2.2 2.2 0 0 1-3.2-3.2l.1-.1a1.8 1.8 0 0 0 .4-2 1.8 1.8 0 0 0-1.7-1.1H2a2.2 2.2 0 0 1 0-4.4h.2a1.8 1.8 0 0 0 1.7-1.1 1.8 1.8 0 0 0-.4-2l-.1-.1A2.2 2.2 0 0 1 5 2.4a2.2 2.2 0 0 1 1.6.6l.1.1a1.8 1.8 0 0 0 2 .4A1.8 1.8 0 0 0 9.8 2V2a2.2 2.2 0 0 1 4.4 0v.2a1.8 1.8 0 0 0 1.1 1.7 1.8 1.8 0 0 0 2-.4l.1-.1a2.2 2.2 0 0 1 3.2 3.2l-.1.1a1.8 1.8 0 0 0-.4 2 1.8 1.8 0 0 0 1.7 1.1H22a2.2 2.2 0 0 1 0 4.4h-.2a1.8 1.8 0 0 0-1.7 1.1z" /></${Icon}>`;
+
+        // ----------------------------
+        // App logic
+        // ----------------------------
+        const STORAGE_KEY = "pfp_path_tracker_v2";
+
+        const PATH_SESSIONS = [
+          "Payments",
+          "Overcoming Objections",
+          "Compliance and Branch Etiquette",
+          "Goals",
+          "Prospect Management",
+          "Referrals and CRM",
+          "Bundling/Upselling",
+          "Policy Review",
+          "FSP Worksites",
+          "SEG Best Practices",
+        ];
+
+        const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+        function loadState() {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+          } catch {
+            return null;
+          }
+        }
+
+        function saveState(state) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function emptyProgress() {
+          return {
+            sentAssignment: false,
+            assignmentCompleted: false,
+            attendedSession: false,
+            didNotCompleteAssignment: false,
+            didNotAttendSession: false,
+          };
+        }
+
+        function ensureSessionKeys(progressBySession) {
+          const next = { ...(progressBySession || {}) };
+          for (const s of PATH_SESSIONS) if (!next[s]) next[s] = emptyProgress();
+          return next;
+        }
+
+        function classifyProgress(p) {
+          if (!p) return "Pending Session";
+          const { sentAssignment, assignmentCompleted, attendedSession, didNotCompleteAssignment, didNotAttendSession } = p;
+          if (didNotCompleteAssignment || didNotAttendSession) return "Missed";
+          if (attendedSession && assignmentCompleted) return "Completed";
+          if (sentAssignment && !assignmentCompleted) return "Need to Complete Assignment";
+          if (assignmentCompleted && !attendedSession) return "Need to Attend";
+          return "Pending Session";
+        }
+
+        function formatDateLabel(iso) {
+          if (!iso) return "Not scheduled";
+          const [y, m, d] = iso.split("-").map((x) => parseInt(x, 10));
+          if (!y || !m || !d) return iso;
+          const dt = new Date(y, m - 1, d);
+          return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+        }
+
+        function applyProgressGuardrails(progress) {
+          const s = { ...progress };
+          if (s.didNotCompleteAssignment) s.assignmentCompleted = false;
+          if (s.didNotAttendSession) s.attendedSession = false;
+          if (s.assignmentCompleted) s.didNotCompleteAssignment = false;
+          if (s.attendedSession) s.didNotAttendSession = false;
+          return s;
+        }
+
+        function resolveClassName(agent, classesById) {
+          return agent.classId ? (classesById[agent.classId]?.name || "-") : "-";
+        }
+        function resolveManagerName(agent, managersById) {
+          return agent.managerId ? (managersById[agent.managerId]?.name || "-") : "-";
+        }
+
+        function SectionHeader({ title, count }) {
+          return html`<div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-800">${title}</div>
+            <${Badge} variant="secondary" className="rounded-full">${count}</${Badge}>
+          </div>`;
+        }
+
+        function AgentRowCompact({ agent, className, managerName }) {
+          return html`<div className="rounded-xl border bg-white p-3">
+            <div className="text-sm font-semibold text-slate-900">${agent.fullName}</div>
+            <div className="mt-1 text-xs text-slate-600">
+              <span className="font-medium">PATH Class:</span> ${className}
+              <span className="mx-2 text-slate-300">•</span>
+              <span className="font-medium">Manager:</span> ${managerName}
+            </div>
+          </div>`;
+        }
+
+        function CompactCounts({ counts }) {
+          const items = [
+            { k: "Need to Complete Assignment", label: "Need assignment" },
+            { k: "Need to Attend", label: "Need attend" },
+            { k: "Completed", label: "Completed" },
+            { k: "Pending Session", label: "Pending" },
+            { k: "Missed", label: "Missed", destructive: true },
+          ];
+          return html`<div className="flex flex-wrap items-center gap-2">
+            ${items.map(
+              (it) => html`<${Badge} key=${it.k} variant=${it.destructive ? "destructive" : "secondary"} className="rounded-full">
+                ${it.label}: ${counts[it.k] || 0}
+              </${Badge}>`
+            )}
+          </div>`;
+        }
+
+        function SessionCardCompact({ session, nextDateISO, groupedAgents, classesById, managersById }) {
+          const [open, setOpen] = useState(false);
+
+          const sections = ["Need to Complete Assignment", "Need to Attend", "Completed", "Pending Session", "Missed"];
+
+          const counts = useMemo(() => {
+            const c = {};
+            for (const s of sections) c[s] = (groupedAgents[s] || []).length;
+            return c;
+          }, [groupedAgents]);
+
+          const total = sections.reduce((acc, k) => acc + (groupedAgents[k]?.length || 0), 0);
+
+          return html`<${Card} className="rounded-2xl">
+            <${CardContent} className="p-0">
+              <button
+                type="button"
+                onClick=${() => setOpen((v) => !v)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="truncate text-base font-semibold text-slate-900">${session}</div>
+                    <${Badge} variant="outline" className="rounded-full">
+                      <${CalendarIcon} className="mr-1 h-3.5 w-3.5" />
+                      ${formatDateLabel(nextDateISO)}
+                    </${Badge}>
+                    <${Badge} variant="secondary" className="rounded-full">
+                      ${total} agent${total === 1 ? "" : "s"}
+                    </${Badge}>
+                  </div>
+                  <div className="mt-2"><${CompactCounts} counts=${counts} /></div>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  ${open ? "Collapse" : "Expand"}
+                  <${ChevronDownIcon} className=${cn("h-4 w-4 transition", open ? "rotate-180" : "rotate-0")} />
+                </div>
+              </button>
+
+              ${open
+                ? html`<div className="grid grid-cols-1 gap-3 border-t p-4 md:grid-cols-2">
+                    ${sections.map(
+                      (k) => html`<div
+                        key=${k}
+                        className=${cn("rounded-2xl p-3", k === "Missed" ? "bg-rose-50" : "bg-slate-50")}
+                      >
+                        <${SectionHeader} title=${k} count=${(groupedAgents[k] || []).length} />
+                        <div className="mt-3 space-y-2">
+                          ${(groupedAgents[k] || []).length === 0
+                            ? html`<div className="text-xs text-slate-500">No agents</div>`
+                            : (groupedAgents[k] || []).map(
+                                (a) => html`<${AgentRowCompact}
+                                  key=${a.id}
+                                  agent=${a}
+                                  className=${resolveClassName(a, classesById)}
+                                  managerName=${resolveManagerName(a, managersById)}
+                                />`
+                              )}
+                        </div>
+                      </div>`
+                    )}
+                  </div>`
+                : null}
+            </${CardContent}>
+          </${Card}>`;
+        }
+
+        function AgentForm({ initial, classes, managers, onSave, onCancel }) {
+          const [fullName, setFullName] = useState((initial && initial.fullName) || "");
+          const [classId, setClassId] = useState((initial && initial.classId) || "");
+          const [managerId, setManagerId] = useState((initial && initial.managerId) || "");
+          const valid = fullName.trim().length > 0;
+
+          return html`<div className="space-y-4">
+            <div className="space-y-2">
+              <${Label}>Full name</${Label}>
+              <${Input} value=${fullName} onChange=${(e) => setFullName(e.target.value)} placeholder="Jane Doe" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <${Label}>PATH class</${Label}>
+                <${Select} value=${classId} onValueChange=${setClassId}>
+                  <option value="">${classes.length ? "Select class" : "No classes yet"}</option>
+                  ${classes.map((c) => html`<${SelectItem} key=${c.id} value=${c.id}>${c.name}</${SelectItem}>`)}
+                </${Select}>
+              </div>
+
+              <div className="space-y-2">
+                <${Label}>Manager</${Label}>
+                <${Select} value=${managerId} onValueChange=${setManagerId}>
+                  <option value="">${managers.length ? "Select manager" : "No managers yet"}</option>
+                  ${managers.map((m) => html`<${SelectItem} key=${m.id} value=${m.id}>${m.name}</${SelectItem}>`)}
+                </${Select}>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <${Button} variant="ghost" onClick=${onCancel}>Cancel</${Button}>
+              <${Button}
+                disabled=${!valid}
+                onClick=${() =>
+                  onSave({
+                    ...(initial || {}),
+                    fullName: fullName.trim(),
+                    classId: classId || "",
+                    managerId: managerId || "",
+                  })
+                }
+              >
+                Save
+              </${Button}>
+            </div>
+          </div>`;
+        }
+
+        function ProgressEditor({ agent, session, onUpdateAgent }) {
+          const p = (agent.progressBySession && agent.progressBySession[session]) || emptyProgress();
+
+          const update = (patch) => {
+            const nextProgress = applyProgressGuardrails({ ...p, ...patch });
+            const next = {
+              ...agent,
+              progressBySession: {
+                ...(agent.progressBySession || {}),
+                [session]: nextProgress,
+              },
+            };
+            onUpdateAgent(next);
+          };
+
+          const status = classifyProgress(p);
+
+          return html`<div className="space-y-4">
+            <div className="rounded-2xl border bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-slate-900">${agent.fullName}</div>
+              <div className="mt-2 flex items-center gap-2">
+                <${Badge} className="rounded-full" variant=${status === "Missed" ? "destructive" : "secondary"}>${status}</${Badge}>
+                <${Badge} className="rounded-full" variant="outline">${session}</${Badge}>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="flex items-start justify-between gap-4 rounded-xl border bg-white p-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Sent Assignment</div>
+                  <div className="mt-1 text-xs text-slate-600">Mark when the assignment is sent.</div>
+                </div>
+                <${Checkbox} checked=${!!p.sentAssignment} onCheckedChange=${(v) => update({ sentAssignment: !!v })} />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-xl border bg-white p-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Assignment Completed</div>
+                  <div className="mt-1 text-xs text-slate-600">If checked, also ensures Sent Assignment is true.</div>
+                </div>
+                <${Checkbox}
+                  checked=${!!p.assignmentCompleted}
+                  onCheckedChange=${(v) => update({ assignmentCompleted: !!v, sentAssignment: !!v ? true : p.sentAssignment })}
+                />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-xl border bg-white p-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Attended Session</div>
+                  <div className="mt-1 text-xs text-slate-600">Use after the live PATH session.</div>
+                </div>
+                <${Checkbox} checked=${!!p.attendedSession} onCheckedChange=${(v) => update({ attendedSession: !!v })} />
+              </div>
+
+              <div className="rounded-2xl border bg-white p-3">
+                <div className="text-sm font-semibold text-slate-900">Rule</div>
+                <div className="mt-1 text-xs text-slate-600">Completed requires Assignment Completed + Attended Session.</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="flex items-start justify-between gap-4 rounded-xl border bg-rose-50 p-3">
+                <div>
+                  <div className="text-sm font-semibold text-rose-800">Did not complete assignment</div>
+                  <div className="mt-1 text-xs text-rose-700">Moves agent to Missed for this session.</div>
+                </div>
+                <${Checkbox} checked=${!!p.didNotCompleteAssignment} onCheckedChange=${(v) => update({ didNotCompleteAssignment: !!v })} />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-xl border bg-rose-50 p-3">
+                <div>
+                  <div className="text-sm font-semibold text-rose-800">Did not attend session</div>
+                  <div className="mt-1 text-xs text-rose-700">Moves agent to Missed for this session.</div>
+                </div>
+                <${Checkbox} checked=${!!p.didNotAttendSession} onCheckedChange=${(v) => update({ didNotAttendSession: !!v })} />
+              </div>
+            </div>
+          </div>`;
+        }
+
+        function ManageListDialog({ title, open, onOpenChange, items, onAdd, onEdit, onDelete, placeholder }) {
+          const [name, setName] = useState("");
+          const [editingId, setEditingId] = useState(null);
+          const [editingValue, setEditingValue] = useState("");
+
+          useEffect(() => {
+            if (!open) {
+              setName("");
+              setEditingId(null);
+              setEditingValue("");
+            }
+          }, [open]);
+
+          return html`<${Dialog} open=${open} onOpenChange=${onOpenChange}>
+            <${DialogContent} className="rounded-2xl">
+              <${DialogHeader}><${DialogTitle}>${title}</${DialogTitle}></${DialogHeader}>
+
+              <div className="space-y-4">
+                <div className="rounded-2xl border bg-slate-50 p-3">
+                  <div className="text-sm font-semibold text-slate-900">Add new</div>
+                  <div className="mt-2 flex gap-2">
+                    <${Input} value=${name} onChange=${(e) => setName(e.target.value)} placeholder=${placeholder} className="rounded-xl" />
+                    <${Button}
+                      className="rounded-xl"
+                      onClick=${() => {
+                        const v = name.trim();
+                        if (!v) return;
+                        onAdd(v);
+                        setName("");
+                      }}
+                    >
+                      Add
+                    </${Button}>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  ${items.length === 0
+                    ? html`<div className="text-sm text-slate-600">Nothing here yet.</div>`
+                    : items.map((it) =>
+                        html`<div key=${it.id} className="flex items-center justify-between gap-3 rounded-xl border bg-white p-3">
+                          ${editingId === it.id
+                            ? html`<div className="flex flex-1 items-center gap-2">
+                                <${Input} value=${editingValue} onChange=${(e) => setEditingValue(e.target.value)} className="rounded-xl" />
+                                <${Button}
+                                  className="rounded-xl"
+                                  onClick=${() => {
+                                    const v = editingValue.trim();
+                                    if (!v) return;
+                                    onEdit(it.id, v);
+                                    setEditingId(null);
+                                    setEditingValue("");
+                                  }}
+                                >
+                                  Save
+                                </${Button}>
+                                <${Button} variant="ghost" className="rounded-xl" onClick=${() => { setEditingId(null); setEditingValue(""); }}>
+                                  Cancel
+                                </${Button}>
+                              </div>`
+                            : html`<${Fragment}>
+                                <div className="text-sm font-semibold text-slate-900">${it.name}</div>
+                                <div className="flex items-center gap-2">
+                                  <${Button} variant="outline" className="rounded-xl" onClick=${() => { setEditingId(it.id); setEditingValue(it.name); }}>
+                                    Edit
+                                  </${Button}>
+                                  <${Button} variant="destructive" className="rounded-xl" onClick=${() => onDelete(it.id)}>
+                                    Delete
+                                  </${Button}>
+                                </div>
+                              </${Fragment}>`}
+                        </div>`
+                      )}
+                </div>
+              </div>
+            </${DialogContent}>
+          </${Dialog}>`;
+        }
+
+        function SessionScheduleDialog({ open, onOpenChange, scheduleBySession, onSetDate }) {
+          const [session, setSession] = useState(PATH_SESSIONS[0]);
+          const value = (scheduleBySession && scheduleBySession[session]) || "";
+
+          useEffect(() => {
+            if (!open) setSession(PATH_SESSIONS[0]);
+          }, [open]);
+
+          return html`<${Dialog} open=${open} onOpenChange=${onOpenChange}>
+            <${DialogContent} className="rounded-2xl">
+              <${DialogHeader}><${DialogTitle}>Session schedule</${DialogTitle}></${DialogHeader}>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <${Label}>PATH session</${Label}>
+                  <${Select} value=${session} onValueChange=${setSession}>
+                    ${PATH_SESSIONS.map((s) => html`<${SelectItem} key=${s} value=${s}>${s}</${SelectItem}>`)}
+                  </${Select}>
+                </div>
+
+                <div className="space-y-2">
+                  <${Label}>Next date</${Label}>
+                  <${Input} type="date" value=${value} onChange=${(e) => onSetDate(session, e.target.value)} className="rounded-xl" />
+                  <div className="text-xs text-slate-600">Shown on the Overview row for this session.</div>
+                </div>
+
+                <div className="flex items-center justify-end">
+                  <${Button} className="rounded-xl" onClick=${() => onOpenChange(false)}>Done</${Button}>
+                </div>
+              </div>
+            </${DialogContent}>
+          </${Dialog}>`;
+        }
+
+        function PathProgramTrackerApp() {
+          const [state, setState] = useState(() => {
+            const loaded = loadState();
+            if (!loaded) {
+              return {
+                classes: [],
+                managers: [],
+                scheduleBySession: Object.fromEntries(PATH_SESSIONS.map((s) => [s, ""])),
+                agents: [],
+              };
+            }
+            return {
+              classes: loaded.classes || [],
+              managers: loaded.managers || [],
+              scheduleBySession: loaded.scheduleBySession || Object.fromEntries(PATH_SESSIONS.map((s) => [s, ""])),
+              agents: (loaded.agents || []).map((a) => ({ ...a, progressBySession: ensureSessionKeys(a.progressBySession) })),
+            };
+          });
+
+          const [tab, setTab] = useState("overview");
+          const [search, setSearch] = useState("");
+
+          const [manageClassesOpen, setManageClassesOpen] = useState(false);
+          const [manageManagersOpen, setManageManagersOpen] = useState(false);
+          const [manageScheduleOpen, setManageScheduleOpen] = useState(false);
+
+          const [agentModalOpen, setAgentModalOpen] = useState(false);
+          const [editingAgentId, setEditingAgentId] = useState(null);
+
+          const [adminSession, setAdminSession] = useState(PATH_SESSIONS[0]);
+          const [selectedAgentIds, setSelectedAgentIds] = useState([]);
+          const [adminBulk, setAdminBulk] = useState({
+            sentAssignment: false,
+            assignmentCompleted: false,
+            attendedSession: false,
+            didNotCompleteAssignment: false,
+            didNotAttendSession: false,
+          });
+          const [progressModalOpen, setProgressModalOpen] = useState(false);
+          const [progressAgentId, setProgressAgentId] = useState(null);
+
+          const [classFilterOpen, setClassFilterOpen] = useState(false);
+          const [managerFilterOpen, setManagerFilterOpen] = useState(false);
+          const [selectedClassIds, setSelectedClassIds] = useState([]);
+          const [selectedManagerIds, setSelectedManagerIds] = useState([]);
+
+          const [manageMenuOpen, setManageMenuOpen] = useState(false);
+
+          useEffect(() => saveState(state), [state]);
+
+          const classes = state.classes;
+          const managers = state.managers;
+          const agents = state.agents;
+          const scheduleBySession = state.scheduleBySession;
+
+          const classesById = useMemo(() => Object.fromEntries(classes.map((c) => [c.id, c])), [classes]);
+          const managersById = useMemo(() => Object.fromEntries(managers.map((m) => [m.id, m])), [managers]);
+
+          const filteredAgents = useMemo(() => {
+            const q = search.trim().toLowerCase();
+            return agents.filter((a) => {
+              const className = resolveClassName(a, classesById);
+              const managerName = resolveManagerName(a, managersById);
+
+              const matchSearch = !q
+                ? true
+                : [a.fullName, className, managerName].some((v) => (v || "").toLowerCase().includes(q));
+
+              const matchClass = selectedClassIds.length === 0 ? true : selectedClassIds.includes(a.classId || "");
+              const matchManager = selectedManagerIds.length === 0 ? true : selectedManagerIds.includes(a.managerId || "");
+
+              return matchSearch && matchClass && matchManager;
+            });
+          }, [agents, search, selectedClassIds, selectedManagerIds, classesById, managersById]);
+
+          const groupedBySession = useMemo(() => {
+            const bySession = {};
+            for (const session of PATH_SESSIONS) {
+              const buckets = {
+                "Need to Complete Assignment": [],
+                "Need to Attend": [],
+                Completed: [],
+                "Pending Session": [],
+                Missed: [],
+              };
+              for (const agent of filteredAgents) {
+                const p = agent.progressBySession && agent.progressBySession[session];
+                buckets[classifyProgress(p)].push(agent);
+              }
+              for (const k of Object.keys(buckets)) buckets[k] = buckets[k].slice().sort((a, b) => a.fullName.localeCompare(b.fullName));
+              bySession[session] = buckets;
+            }
+            return bySession;
+          }, [filteredAgents]);
+
+          const openAddAgent = () => { setEditingAgentId(null); setAgentModalOpen(true); };
+          const openEditAgent = (id) => { setEditingAgentId(id); setAgentModalOpen(true); };
+
+          const upsertAgent = (agent) => {
+            setState((prev) => {
+              const existing = prev.agents.find((a) => a.id === agent.id);
+              if (existing) {
+                return { ...prev, agents: prev.agents.map((a) => (a.id === agent.id ? { ...a, ...agent } : a)) };
+              }
+              const created = {
+                id: uid(),
+                fullName: agent.fullName,
+                classId: agent.classId || "",
+                managerId: agent.managerId || "",
+                progressBySession: ensureSessionKeys({}),
+              };
+              return { ...prev, agents: [created, ...prev.agents] };
+            });
+            setAgentModalOpen(false);
+          };
+
+          const deleteAgent = (id) => setState((prev) => ({ ...prev, agents: prev.agents.filter((a) => a.id !== id) }));
+          const updateAgent = (nextAgent) => setState((prev) => ({ ...prev, agents: prev.agents.map((a) => (a.id === nextAgent.id ? nextAgent : a)) }));
+
+          const editingAgent = editingAgentId ? agents.find((a) => a.id === editingAgentId) : null;
+
+          const toggleInList = (list, value) => (list.includes(value) ? list.filter((v) => v !== value) : list.concat([value]));
+          const clearFilters = () => { setSelectedClassIds([]); setSelectedManagerIds([]); };
+
+          useEffect(() => {
+            const allowed = new Set(filteredAgents.map((a) => a.id));
+            setSelectedAgentIds((prev) => prev.filter((id) => allowed.has(id)));
+          }, [filteredAgents]);
+
+          const applyBulkToAgent = (agent, session, patch) => {
+            const current = (agent.progressBySession && agent.progressBySession[session]) || emptyProgress();
+            const toApply = {};
+            Object.keys(patch).forEach((k) => { if (patch[k] === true) toApply[k] = true; });
+            const next = { ...current, ...toApply };
+            if (patch.assignmentCompleted) next.sentAssignment = true;
+            return {
+              ...agent,
+              progressBySession: { ...(agent.progressBySession || {}), [session]: applyProgressGuardrails(next) },
+            };
+          };
+
+          const runBulkApply = () => {
+            if (!selectedAgentIds.length) return;
+            setState((prev) => ({
+              ...prev,
+              agents: prev.agents.map((a) => (selectedAgentIds.includes(a.id) ? applyBulkToAgent(a, adminSession, adminBulk) : a)),
+            }));
+          };
+
+          const resetAdminBulk = () =>
+            setAdminBulk({
+              sentAssignment: false,
+              assignmentCompleted: false,
+              attendedSession: false,
+              didNotCompleteAssignment: false,
+              didNotAttendSession: false,
+            });
+
+          const openProgressModal = (agentId) => { setProgressAgentId(agentId); setProgressModalOpen(true); };
+          const progressAgent = progressAgentId ? agents.find((a) => a.id === progressAgentId) : null;
+
+          const addClass = (name) => setState((p) => ({ ...p, classes: [{ id: uid(), name }, ...p.classes] }));
+          const editClass = (id, name) => setState((p) => ({ ...p, classes: p.classes.map((c) => (c.id === id ? { ...c, name } : c)) }));
+          const deleteClass = (id) =>
+            setState((p) => ({
+              ...p,
+              classes: p.classes.filter((c) => c.id !== id),
+              agents: p.agents.map((a) => (a.classId === id ? { ...a, classId: "" } : a)),
+            }));
+
+          const addManager = (name) => setState((p) => ({ ...p, managers: [{ id: uid(), name }, ...p.managers] }));
+          const editManager = (id, name) => setState((p) => ({ ...p, managers: p.managers.map((m) => (m.id === id ? { ...m, name } : m)) }));
+          const deleteManager = (id) =>
+            setState((p) => ({
+              ...p,
+              managers: p.managers.filter((m) => m.id !== id),
+              agents: p.agents.map((a) => (a.managerId === id ? { ...a, managerId: "" } : a)),
+            }));
+
+          const setSessionDate = (session, iso) =>
+            setState((p) => ({ ...p, scheduleBySession: { ...p.scheduleBySession, [session]: iso } }));
+
+          return html`<div className="min-h-screen bg-slate-100">
+            <div className="mx-auto max-w-6xl p-4 md:p-8">
+              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div className="text-2xl font-semibold tracking-tight text-slate-900">PATH Program Tracker</div>
+                  <div className="mt-1 text-sm text-slate-600">Track agents by session with a clean overview + admin checkoff.</div>
+                </div>
+
+                <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+                  <div className="relative w-full md:w-[320px]">
+                    <${SearchIcon} className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                    <${Input} className="rounded-xl pl-10" value=${search} onChange=${(e) => setSearch(e.target.value)} placeholder="Search agent, class, manager" />
+                  </div>
+
+                  <div className="relative">
+                    <${Button} variant="outline" className="rounded-xl" onClick=${() => setManageMenuOpen((v) => !v)}>
+                      <${SettingsIcon} className="h-4 w-4" /> Manage <${ChevronDownIcon} className="h-4 w-4" />
+                    </${Button}>
+
+                    ${manageMenuOpen
+                      ? html`<div className="absolute right-0 mt-2 w-56 rounded-xl border bg-white p-2 shadow-lg">
+                          <div className="px-2 py-1 text-xs font-semibold text-slate-600">Data setup</div>
+                          <button className="flex w-full items-center rounded-lg px-2 py-2 text-sm text-slate-800 hover:bg-slate-100" onClick=${() => { setManageClassesOpen(true); setManageMenuOpen(false); }}>
+                            Manage PATH Classes
+                          </button>
+                          <button className="flex w-full items-center rounded-lg px-2 py-2 text-sm text-slate-800 hover:bg-slate-100" onClick=${() => { setManageManagersOpen(true); setManageMenuOpen(false); }}>
+                            Manage Managers
+                          </button>
+                          <button className="flex w-full items-center rounded-lg px-2 py-2 text-sm text-slate-800 hover:bg-slate-100" onClick=${() => { setManageScheduleOpen(true); setManageMenuOpen(false); }}>
+                            Set session dates
+                          </button>
+                          <div className="my-1 h-px bg-slate-200"></div>
+                          <button className="flex w-full items-center rounded-lg px-2 py-2 text-sm text-slate-800 hover:bg-slate-100" onClick=${() => { openAddAgent(); setManageMenuOpen(false); }}>
+                            Add agent
+                          </button>
+                        </div>`
+                      : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border bg-white p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Filters</div>
+                    <div className="mt-1 text-xs text-slate-600">Filter by one or more PATH Classes and/or Managers.</div>
+                  </div>
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                    <${Button} variant="outline" className="rounded-xl" onClick=${() => setClassFilterOpen(true)}>
+                      PATH Classes (${selectedClassIds.length || "All"})
+                    </${Button}>
+                    <${Button} variant="outline" className="rounded-xl" onClick=${() => setManagerFilterOpen(true)}>
+                      Managers (${selectedManagerIds.length || "All"})
+                    </${Button}>
+                    <${Button} variant="ghost" className="rounded-xl" onClick=${clearFilters}>Clear</${Button}>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <${Tabs} value=${tab} onValueChange=${setTab}>
+                  <${TabsList} className="rounded-2xl">
+                    <${TabsTrigger} value="overview" className="rounded-xl">Overview</${TabsTrigger}>
+                    <${TabsTrigger} value="admin" className="rounded-xl">Admin</${TabsTrigger}>
+                    <${TabsTrigger} value="agents" className="rounded-xl">Agents</${TabsTrigger}>
+                  </${TabsList}>
+
+                  <${TabsContent} value="overview" className="mt-4 space-y-3">
+                    ${PATH_SESSIONS.map(
+                      (s) => html`<${SessionCardCompact}
+                        key=${s}
+                        session=${s}
+                        nextDateISO=${(scheduleBySession && scheduleBySession[s]) || ""}
+                        groupedAgents=${groupedBySession[s]}
+                        classesById=${classesById}
+                        managersById=${managersById}
+                      />`
+                    )}
+                  </${TabsContent}>
+
+                  <${TabsContent} value="admin" className="mt-4">
+                    <${Card} className="rounded-2xl">
+                      <${CardContent} className="p-4 md:p-6">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                          <div>
+                            <div className="text-base font-semibold text-slate-900">Admin checkoff</div>
+                            <div className="mt-1 text-sm text-slate-600">1) Pick a session 2) Select agents 3) Bulk apply or edit one.</div>
+                          </div>
+                          <div className="w-full md:w-[360px]">
+                            <${Label} className="text-xs">Session</${Label}>
+                            <div className="mt-2">
+                              <${Select} value=${adminSession} onValueChange=${setAdminSession}>
+                                ${PATH_SESSIONS.map((s) => html`<${SelectItem} key=${s} value=${s}>${s}</${SelectItem}>`)}
+                              </${Select}>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                          <div className="rounded-2xl border bg-slate-50 p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm font-semibold text-slate-900">Bulk apply</div>
+                              <${Badge} variant="secondary" className="rounded-full">${selectedAgentIds.length} selected</${Badge}>
+                            </div>
+                            <div className="mt-1 text-xs text-slate-600">Only the checked items below will be applied (set to true).</div>
+
+                            <div className="mt-3 grid grid-cols-1 gap-2">
+                              ${[
+                                ["sentAssignment", "Sent Assignment"],
+                                ["assignmentCompleted", "Assignment Completed"],
+                                ["attendedSession", "Attended Session"],
+                              ].map(([k, label]) =>
+                                html`<div key=${k} className="flex items-center justify-between rounded-xl bg-white p-3">
+                                  <div className="text-sm font-semibold text-slate-900">${label}</div>
+                                  <${Checkbox}
+                                    checked=${!!adminBulk[k]}
+                                    onCheckedChange=${(v) => setAdminBulk((p) => ({ ...p, [k]: !!v }))}
+                                  />
+                                </div>`
+                              )}
+
+                              <div className="flex items-center justify-between rounded-xl border bg-rose-50 p-3">
+                                <div className="text-sm font-semibold text-rose-800">Did not complete assignment</div>
+                                <${Checkbox}
+                                  checked=${!!adminBulk.didNotCompleteAssignment}
+                                  onCheckedChange=${(v) => setAdminBulk((p) => ({ ...p, didNotCompleteAssignment: !!v }))}
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between rounded-xl border bg-rose-50 p-3">
+                                <div className="text-sm font-semibold text-rose-800">Did not attend session</div>
+                                <${Checkbox}
+                                  checked=${!!adminBulk.didNotAttendSession}
+                                  onCheckedChange=${(v) => setAdminBulk((p) => ({ ...p, didNotAttendSession: !!v }))}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-end gap-2">
+                              <${Button} variant="outline" className="rounded-xl" onClick=${resetAdminBulk}>Reset</${Button}>
+                              <${Button} className="rounded-xl" onClick=${runBulkApply} disabled=${!selectedAgentIds.length}>Apply</${Button}>
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border bg-white p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-sm font-semibold text-slate-900">Agents</div>
+                                <div className="mt-1 text-xs text-slate-600">${filteredAgents.length} shown</div>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <${Button}
+                                  variant="outline"
+                                  className="rounded-xl"
+                                  onClick=${() => setSelectedAgentIds(filteredAgents.map((a) => a.id))}
+                                  disabled=${filteredAgents.length === 0}
+                                >
+                                  Select all shown
+                                </${Button}>
+                                <${Button} variant="outline" className="rounded-xl" onClick=${() => setSelectedAgentIds([])}>Clear</${Button}>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 space-y-2">
+                              ${filteredAgents.length === 0
+                                ? html`<div className="text-sm text-slate-600">No agents match your filters/search.</div>`
+                                : filteredAgents
+                                    .slice()
+                                    .sort((a, b) => a.fullName.localeCompare(b.fullName))
+                                    .map((a) => {
+                                      const checked = selectedAgentIds.includes(a.id);
+                                      const p = (a.progressBySession && a.progressBySession[adminSession]) || emptyProgress();
+                                      const status = classifyProgress(p);
+                                      return html`<div key=${a.id} className="flex items-start gap-3 rounded-xl border p-3 hover:bg-slate-50">
+                                        <div className="pt-1">
+                                          <${Checkbox}
+                                            checked=${checked}
+                                            onCheckedChange=${(v) =>
+                                              setSelectedAgentIds((prev) => (v ? prev.concat([a.id]) : prev.filter((id) => id !== a.id)))
+                                            }
+                                          />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <div className="truncate text-sm font-semibold text-slate-900">${a.fullName}</div>
+                                            <${Badge} className="rounded-full" variant=${status === "Missed" ? "destructive" : "secondary"}>${status}</${Badge}>
+                                          </div>
+                                          <div className="mt-1 text-xs text-slate-600">
+                                            ${resolveClassName(a, classesById)} <span className="mx-2 text-slate-300">•</span> ${resolveManagerName(a, managersById)}
+                                          </div>
+                                        </div>
+                                        <${Button} variant="outline" className="rounded-xl" onClick=${() => openProgressModal(a.id)}>Edit</${Button}>
+                                      </div>`;
+                                    })}
+                            </div>
+                          </div>
+                        </div>
+                      </${CardContent}>
+                    </${Card}>
+                  </${TabsContent}>
+
+                  <${TabsContent} value="agents" className="mt-4">
+                    <${Card} className="rounded-2xl">
+                      <${CardContent} className="p-4 md:p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-base font-semibold text-slate-900">Agents</div>
+                            <div className="mt-1 text-sm text-slate-600">Add, edit, or remove agents.</div>
+                          </div>
+                          <${Button} className="rounded-xl" onClick=${openAddAgent}>Add agent</${Button}>
+                        </div>
+
+                        ${filteredAgents.length === 0
+                          ? html`<div className="mt-6 text-sm text-slate-600">No agents match your filters/search.</div>`
+                          : html`<div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
+                              ${filteredAgents
+                                .slice()
+                                .sort((a, b) => a.fullName.localeCompare(b.fullName))
+                                .map(
+                                  (a) => html`<div key=${a.id} className="rounded-2xl border bg-white p-4">
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div>
+                                        <div className="text-sm font-semibold text-slate-900">${a.fullName}</div>
+                                        <div className="mt-1 text-xs text-slate-600">
+                                          PATH Class: ${resolveClassName(a, classesById)} <span className="mx-2 text-slate-300">•</span>
+                                          Manager: ${resolveManagerName(a, managersById)}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <${Button} variant="outline" className="rounded-xl" onClick=${() => openEditAgent(a.id)}>Edit</${Button}>
+                                        <${Button} variant="destructive" className="rounded-xl" onClick=${() => deleteAgent(a.id)}>Delete</${Button}>
+                                      </div>
+                                    </div>
+                                  </div>`
+                                )}
+                            </div>`}
+                      </${CardContent}>
+                    </${Card}>
+                  </${TabsContent}>
+                </${Tabs}>
+              </div>
+
+              <${Dialog} open=${agentModalOpen} onOpenChange=${setAgentModalOpen}>
+                <${DialogContent} className="rounded-2xl">
+                  <${DialogHeader}><${DialogTitle}>${editingAgent ? "Edit agent" : "Add agent"}</${DialogTitle}></${DialogHeader}>
+                  <${AgentForm}
+                    initial=${editingAgent}
+                    classes=${classes}
+                    managers=${managers}
+                    onCancel=${() => setAgentModalOpen(false)}
+                    onSave=${(data) => (editingAgent ? upsertAgent({ ...editingAgent, ...data }) : upsertAgent(data))}
+                  />
+                </${DialogContent}>
+              </${Dialog}>
+
+              <${Dialog} open=${progressModalOpen} onOpenChange=${setProgressModalOpen}>
+                <${DialogContent} className="rounded-2xl">
+                  <${DialogHeader}><${DialogTitle}>Edit progress</${DialogTitle}></${DialogHeader}>
+                  ${progressAgent
+                    ? html`<${ProgressEditor} agent=${progressAgent} session=${adminSession} onUpdateAgent=${updateAgent} />`
+                    : html`<div className="text-sm text-slate-600">No agent selected.</div>`}
+                </${DialogContent}>
+              </${Dialog}>
+
+              <${ManageListDialog}
+                title="Manage PATH Classes"
+                open=${manageClassesOpen}
+                onOpenChange=${setManageClassesOpen}
+                items=${classes}
+                onAdd=${addClass}
+                onEdit=${editClass}
+                onDelete=${deleteClass}
+                placeholder="e.g., Jan 2026 Cohort"
+              />
+
+              <${ManageListDialog}
+                title="Manage Managers"
+                open=${manageManagersOpen}
+                onOpenChange=${setManageManagersOpen}
+                items=${managers}
+                onAdd=${addManager}
+                onEdit=${editManager}
+                onDelete=${deleteManager}
+                placeholder="e.g., Alex Smith"
+              />
+
+              <${SessionScheduleDialog}
+                open=${manageScheduleOpen}
+                onOpenChange=${setManageScheduleOpen}
+                scheduleBySession=${scheduleBySession}
+                onSetDate=${setSessionDate}
+              />
+
+              <${Dialog} open=${classFilterOpen} onOpenChange=${setClassFilterOpen}>
+                <${DialogContent} className="rounded-2xl">
+                  <${DialogHeader}><${DialogTitle}>Filter: PATH Classes</${DialogTitle}></${DialogHeader}>
+                  <div className="space-y-3">
+                    ${classes.length === 0
+                      ? html`<div className="text-sm text-slate-600">No classes yet. Use Manage → Manage PATH Classes.</div>`
+                      : html`<div className="space-y-2">
+                          ${classes.map(
+                            (c) => html`<div key=${c.id} className="flex items-center justify-between rounded-xl border p-3">
+                              <div className="text-sm font-semibold text-slate-900">${c.name}</div>
+                              <${Checkbox}
+                                checked=${selectedClassIds.includes(c.id)}
+                                onCheckedChange=${() => setSelectedClassIds((prev) => toggleInList(prev, c.id))}
+                              />
+                            </div>`
+                          )}
+                        </div>`}
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <${Button} variant="outline" className="rounded-xl" onClick=${() => setSelectedClassIds([])}>Clear</${Button}>
+                      <${Button} className="rounded-xl" onClick=${() => setClassFilterOpen(false)}>Done</${Button}>
+                    </div>
+                  </div>
+                </${DialogContent}>
+              </${Dialog}>
+
+              <${Dialog} open=${managerFilterOpen} onOpenChange=${setManagerFilterOpen}>
+                <${DialogContent} className="rounded-2xl">
+                  <${DialogHeader}><${DialogTitle}>Filter: Managers</${DialogTitle}></${DialogHeader}>
+                  <div className="space-y-3">
+                    ${managers.length === 0
+                      ? html`<div className="text-sm text-slate-600">No managers yet. Use Manage → Manage Managers.</div>`
+                      : html`<div className="space-y-2">
+                          ${managers.map(
+                            (m) => html`<div key=${m.id} className="flex items-center justify-between rounded-xl border p-3">
+                              <div className="text-sm font-semibold text-slate-900">${m.name}</div>
+                              <${Checkbox}
+                                checked=${selectedManagerIds.includes(m.id)}
+                                onCheckedChange=${() => setSelectedManagerIds((prev) => toggleInList(prev, m.id))}
+                              />
+                            </div>`
+                          )}
+                        </div>`}
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <${Button} variant="outline" className="rounded-xl" onClick=${() => setSelectedManagerIds([])}>Clear</${Button}>
+                      <${Button} className="rounded-xl" onClick=${() => setManagerFilterOpen(false)}>Done</${Button}>
+                    </div>
+                  </div>
+                </${DialogContent}>
+              </${Dialog}>
+            </div>
+          </div>`;
+        }
+
+        // Mount
+        ReactDOM.createRoot(document.getElementById("root")).render(html`<${PathProgramTrackerApp} />`);
+      })();
+    </script>
+  </body>
+</html>
